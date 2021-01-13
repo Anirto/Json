@@ -1,8 +1,9 @@
+
+#include "json.h"
 #include <stdio.h>
 #include <assert.h>
 #include <malloc.h>
 #include <string.h>
-#include "json.h"
 
 typedef struct array array;
 typedef struct object object;
@@ -41,10 +42,11 @@ struct value
 
 JSON *json_new(json_e type)
 {
-    if (type < 0 || type > 5)
+    if (type <= JSON_NONE || type >= JSON_MAX)
         return NULL;
     JSON *json = (JSON *)calloc(1, sizeof(JSON));
-    if (!json) {
+    if (!json) 
+    {
         //想想：为什么输出到stderr，不用printf输出到stdout？
         fprintf(stderr, "json_new: calloc(%lu) failed\n", sizeof(JSON));
         return NULL;
@@ -157,7 +159,6 @@ int json_save(const JSON *json, const char *fname)
 
 JSON *json_new_bool(BOOL val)
 {
-    //TODO:
 	JSON *json = json_new(JSON_BOL);
 	if (!json)
 		return NULL;
@@ -169,12 +170,15 @@ JSON *json_new_str(const char *str)
 {
     JSON *json;
     assert(str);
-    
+    if (str == NULL)
+        return NULL;
+
     json = json_new(JSON_STR);
     if (!json)
         return json;
     json->str = strdup(str);
-    if (!json->str) {
+    if (!json->str) 
+    {
         fprintf(stderr, "json_new_str: strdup(%s) failed", str);
         json_free(json);
         return NULL;
@@ -218,7 +222,14 @@ const JSON *json_get_member(const JSON *json, const char *key)
     assert(key);
     assert(key[0]);
 
-    for (i = 0; i < json->obj.count; ++i) {
+    if (json == NULL ||
+        json->type != JSON_OBJ ||
+        (json->obj.count > 0 && json->obj.kvs == NULL) || 
+        key == NULL || !key[0] )
+        return NULL;
+
+    for (i = 0; i < json->obj.count; ++i) 
+    {
         if (strcmp(json->obj.kvs[i].key, key) == 0)
             return json->obj.kvs[i].val;
     }
@@ -231,9 +242,10 @@ const JSON *json_get_element(const JSON *json, U32 idx)
     assert(json->type == JSON_ARR);
     assert(!(json->arr.count > 0 && json->arr.elems == NULL));
 
-    if (json->type != JSON_ARR)
-        return NULL;
-    if (idx >= json->arr.count)
+     if (json == NULL ||
+        json->type != JSON_ARR ||
+        (json->obj.count > 0 && json->obj.kvs == NULL) || 
+        idx >= json->arr.count || idx < 0 )
         return NULL;
     return json->arr.elems[idx];
 }
@@ -244,17 +256,26 @@ JSON *json_add_member(JSON *json, const char *key, JSON *val)
     assert(!(json->obj.count > 0 && json->obj.kvs == NULL));
     assert(key);
     assert(key[0]);
-    //想想: 为啥不用assert检查val？
-    //想想：如果json中已经存在名字为key的成员，怎么办？
-    //TODO:
+
+    if (json == NULL || 
+        val == NULL ||
+        json->type != JSON_OBJ || 
+        (json->obj.count > 0 && json->obj.kvs == NULL) || 
+        key == NULL || !key[0] ||
+        json_get_member(json, key) != NULL )
+    {
+        json_free(val);
+		return NULL;
+    }
+
 	keyvalue * p = (keyvalue *)realloc(json->obj.kvs, (json->obj.count + 1) * sizeof(keyvalue));
 	if (p == NULL)
 	{
 		json_free(val);
 		return NULL;
 	}
-	json->obj.kvs = p;
 
+	json->obj.kvs = p;
 	p[json->obj.count].key = strdup(key);
 	p[json->obj.count].val = val;
 	json->obj.count++;
@@ -268,10 +289,21 @@ JSON *json_add_element(JSON *json, JSON *val)
     assert(json->type == JSON_ARR);
     assert(!(json->arr.count > 0 && json->arr.elems == NULL));
 
-    //想想：为啥不用assert检查val？
+    if (json == NULL || 
+        val == NULL || 
+        json->type != JSON_ARR ||
+        (json->arr.count > 0 && json->arr.elems == NULL) )
+    {
+        json_free(val);
+        return NULL;
+    }
+
     value ** p = (value **)realloc(json->arr.elems, (json->arr.count + 1) * sizeof(value));
 	if (p == NULL)
-		return NULL;
+    {
+        json_free(val);
+        return NULL;
+    }
 
 	json->arr.elems = p;
 	p = p + json->arr.count;
@@ -282,6 +314,11 @@ JSON *json_add_element(JSON *json, JSON *val)
 
 static const JSON *get_child(const JSON *json, const char *key, json_e expect_type)
 {
+    if (json == NULL ||
+        key == NULL ||
+        !key[0])
+        return NULL;
+
     const JSON *child;
 
     child = json_get_member(json, key);
@@ -318,6 +355,7 @@ const char *json_obj_get_str(const JSON *json, const char *key, const char *def)
 
 int json_obj_set_num(JSON *json, const char *key, double val)
 {
+
     JSON *p = (JSON*)get_child(json, key, JSON_NUM);
 	if (p == NULL)
 		return -1;
@@ -337,6 +375,8 @@ int json_obj_set_bool(JSON *json, const char *key, BOOL val)
 int json_obj_set_str(JSON *json, const char *key, const char *val)
 {
 	assert(json);
+    if ( val == NULL )
+        return -1;
     value *p = (value*)get_child(json, key, JSON_STR);
 	if(p == NULL)
 		return -1;
@@ -356,7 +396,11 @@ int json_arr_count(const JSON *json)
 
 double json_arr_get_num(const JSON *json, int idx, double def)
 {
-    if(json == NULL || idx >= json->arr.count)
+    assert(json);
+    if (json == NULL || 
+        json->type != JSON_ARR ||
+        idx >= json->arr.count ||
+        idx < 0)
 		return def;
 	return json_num(json->arr.elems[idx], -1);
     //return def;
@@ -365,14 +409,26 @@ double json_arr_get_num(const JSON *json, int idx, double def)
 BOOL json_arr_get_bool(const JSON *json, int idx)
 {
 	assert(json);
+    // if (json == NULL || 
+    //     json->type != JSON_ARR ||
+    //     idx >= json->arr.count ||
+    //     idx < 0)
+        
 	return json_bool(json->arr.elems[idx]);
 }
 
 const char *json_arr_get_str(const JSON *json, int idx, const char *def)
 {
-    //TODO:
-	if(json == NULL || idx >= json->arr.count)
-		return def;
+    assert(json);
+    if (json == NULL || 
+        json->type != JSON_ARR ||
+        idx >= json->arr.count ||
+        idx < 0)
+    {
+        return def;
+    }
+        
+
 	return json_str(json->arr.elems[idx], "error");
 }
 
@@ -392,7 +448,7 @@ int json_arr_add_num(JSON *json, double val)
 
 int json_arr_add_bool(JSON *json, BOOL val)
 {
-    if(json == NULL)
+    if (json == NULL || json->type != JSON_ARR)
 		return -1;
 
 	JSON *p = json_new_bool(val);
@@ -406,7 +462,7 @@ int json_arr_add_bool(JSON *json, BOOL val)
 
 int json_arr_add_str(JSON *json, const char *val)
 {
-	if(json == NULL || val == NULL)
+	if (json == NULL || json->type != JSON_ARR)
 		return -1;
 
 	JSON *p = json_new_str(val);
@@ -418,4 +474,3 @@ int json_arr_add_str(JSON *json, const char *val)
 
 	return 0;
 }
-

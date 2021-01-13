@@ -4,10 +4,60 @@
 #include <assert.h>
 #include <errno.h>
 
+typedef struct buf_t {
+    char *str;
+    unsigned int size;
+} buf_t;
+
+int read_file(buf_t *buf, const char *fname)
+{
+    FILE *fp;
+    long len;
+    long realsize;
+
+    assert(buf);
+    assert(fname);
+    assert(fname[0]);
+
+    fp = fopen(fname, "rb");
+    if (!fp) {
+        fprintf(stderr, "open file [%s] failed\n", fname);
+        return -1;
+    }
+    fseek(fp, 0, SEEK_END);
+    len = ftell(fp);
+    if (len <= 0) {
+        fclose(fp);
+        fprintf(stderr, "ftell failed, errno: %d\n", errno);
+        return -1;
+    }
+    fseek(fp, 0, SEEK_SET);
+    buf->str = (char *)malloc(len + 1);
+    if (!buf->str) {
+        fclose(fp);
+        buf->size = 0;
+        fprintf(stderr, "malloc(%ld) failed\n", len + 1);
+        return -1;
+    }
+    buf->size = len + 1;
+    realsize = fread(buf->str, 1, len, fp);
+    fclose(fp);
+
+    buf->str[realsize] = '\0';
+    return 0;
+}
+
 TEST(json_new, exit)
 {
     JSON *json = json_new(JSON_OBJ);
     ASSERT_TRUE(json != NULL);
+    free(json);
+}
+
+TEST(json_new, error_type)
+{
+    JSON *json = json_new(JSON_NONE);
+    ASSERT_TRUE(json == NULL);
     free(json);
 }
 
@@ -18,6 +68,166 @@ TEST(json_type, stat)
     ASSERT_TRUE(JSON_OBJ == json_type(json));
     free(json);
 }
+
+TEST(json_save, str)
+{
+    JSON *json;
+    buf_t result;
+    const char *expect = "\"hello world\"\n";
+
+    json = json_new_str("hello world");
+    EXPECT_EQ(0, json_save(json, "test.yml"));
+    EXPECT_EQ(0, read_file(&result, "test.yml"));
+
+    ASSERT_TRUE(strcmp(result.str, expect) == 0);
+    free(result.str);
+    json_free(json);
+}
+
+TEST(json_save, obj)
+{
+    JSON *json;
+    buf_t result;
+    const char *expect = "key: \"hello\"\nname: \"world\"\n";
+
+    json = json_new(JSON_OBJ);
+    json_add_member(json, "key", json_new_str("hello"));
+    json_add_member(json, "name", json_new_str("world"));
+
+    EXPECT_EQ(0, json_save(json, "test-obj.yml"));
+    EXPECT_EQ(0, read_file(&result, "test-obj.yml"));
+
+    ASSERT_TRUE(strcmp(result.str, expect) == 0);
+    free(result.str);
+    json_free(json);
+}
+
+TEST(json_new_bool, stat)
+{
+    JSON *json = json_new_bool(TRUE);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_EQ(TRUE, json_bool(json));
+    free(json);
+}
+
+TEST(json_new_str, stat)
+{
+    JSON *json = json_new_str("xuchong");
+    ASSERT_TRUE(json != NULL);
+    ASSERT_STREQ("xuchong", json_str(json, "error"));
+    json_free(json);
+}
+
+TEST(json_new_num, stat)
+{
+    JSON *json = json_new_num(11);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_EQ(11, json_num(json, -1));
+    json_free(json);
+}
+
+TEST(json_get_member, success)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_TRUE(NULL != json_add_member(json, "mem", json_new_num(123)));
+    ASSERT_TRUE( NULL != json_get_member(json, "mem"));
+    json_free(json);
+}
+
+TEST(json_get_member, failed)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_TRUE(NULL == json_get_member(json, "mem"));
+    json_free(json);
+}
+
+TEST(json_get_element, success)
+{
+    JSON *json = json_new(JSON_ARR);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_TRUE(0 == json_arr_add_str(json, "xuchong"));
+    ASSERT_STREQ("xuchong", json_str(json_get_element(json, 0), "error"));
+    json_free(json);
+}
+
+TEST(json_add_member, if_json_is_null)
+{
+    JSON *json = NULL;
+    ASSERT_EQ(NULL, json_add_member(json, "json", json_new_num(12.3)));
+    json_free(json);
+}
+
+TEST(json_add_member, if_key_is_null)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_EQ(NULL, json_add_member(json, "", json_new_num(12.3)));
+    json_free(json);
+}
+
+TEST(json_add_member, if_value_is_null)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_EQ(NULL, json_add_member(json, "json", json_new(JSON_NONE)));
+    json_free(json);
+}
+
+TEST(json_get_element, failed)
+{
+    JSON *json = json_new(JSON_ARR);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_EQ(NULL, json_get_element(json, 0));
+    ASSERT_EQ(NULL, json_get_element(json, -1));
+    ASSERT_EQ(NULL, json_get_element(NULL, -1));
+    json_free(json);
+}
+
+TEST(json_add_element, if_json_is_null)
+{
+    JSON *json = json_new(JSON_NONE);
+    ASSERT_EQ(NULL, json_add_element(json, json_new_str("hello")));
+    json_free(json);
+}
+
+TEST(json_obj_get_num, success)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_TRUE(NULL != json_add_member(json, "num", json_new_num(22)));
+	ASSERT_EQ(22.0, json_obj_get_num(json, "num", -1.0));
+    json_free(json);
+}
+
+TEST(json_obj_get_num, if_key_not_exist)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    //ASSERT_TRUE(NULL != json_add_member(json, "num", json_new_num(22)));
+	ASSERT_EQ(-1.0, json_obj_get_num(json, "num", -1.0));
+    json_free(json);
+}
+
+TEST(json_obj_get_num, if_josn_is_null)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    //ASSERT_TRUE(NULL != json_add_member(json, "num", json_new_num(22)));
+	ASSERT_EQ(-1.0, json_obj_get_num(NULL, "num", -1.0));
+    json_free(json);
+}
+
+TEST(json_obj_get_bool, success)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+    ASSERT_TRUE(NULL != json_add_member(json, "num", json_new_bool(TRUE)));
+	ASSERT_EQ(TRUE, json_obj_get_bool(json, "num"));
+    json_free(json);
+}
+
 //  测试键值对存在的情况
 TEST(json_obj_get_str, exist)
 {
@@ -31,24 +241,6 @@ TEST(json_obj_get_str, exist)
 
     json_free(json);
 }
-
-//  测试键值对不存在的情况
-TEST(json_obj_get_str, notexist)
-{
-    JSON *json = json_new(JSON_OBJ);
-    ASSERT_TRUE(json != NULL);
-
-    ASSERT_TRUE(NULL != json_add_member(json, "ip", json_new_str("200.200.3.61")));
-    const char *ip = json_obj_get_str(json, "ip2", NULL);
-    ASSERT_TRUE(ip == NULL);
-
-    ip = json_obj_get_str(json, "ip3", "default");
-    ASSERT_TRUE(ip != NULL);
-    ASSERT_STRCASEEQ("default", ip);
-
-    json_free(json);
-}
-
 
 // 测试改变num的json值
 TEST(json_obj_set_num, stat)
@@ -96,6 +288,23 @@ TEST(json_obj_set_str, stat)
 	json_free(json);	
 }
 
+//  测试键值对不存在的情况
+TEST(json_obj_get_str, if_kv_notexist)
+{
+    JSON *json = json_new(JSON_OBJ);
+    ASSERT_TRUE(json != NULL);
+
+    ASSERT_TRUE(NULL != json_add_member(json, "ip", json_new_str("200.200.3.61")));
+    const char *ip = json_obj_get_str(json, "ip2", NULL);
+    ASSERT_TRUE(ip == NULL);
+
+    ip = json_obj_get_str(json, "ip3", "default");
+    ASSERT_TRUE(ip != NULL);
+    ASSERT_STRCASEEQ("default", ip);
+
+    json_free(json);
+}
+
 //数组set bool
 TEST(json_arr_set_bool, stat)
 {
@@ -127,7 +336,6 @@ TEST(json_arr_set_str, stat)
     free(json);
 }
 
-
 //测试json数组
 TEST(json_arr, stat)
 {
@@ -151,86 +359,6 @@ TEST(json_arr, stat)
 	
 	json_free(json);
 }
-
-
-typedef struct buf_t {
-    char *str;
-    unsigned int size;
-} buf_t;
-
-int read_file(buf_t *buf, const char *fname)
-{
-    FILE *fp;
-    long len;
-    long realsize;
-
-    assert(buf);
-    assert(fname);
-    assert(fname[0]);
-
-    fp = fopen(fname, "rb");
-    if (!fp) {
-        fprintf(stderr, "open file [%s] failed\n", fname);
-        return -1;
-    }
-    fseek(fp, 0, SEEK_END);
-    len = ftell(fp);
-    if (len <= 0) {
-        fclose(fp);
-        fprintf(stderr, "ftell failed, errno: %d\n", errno);
-        return -1;
-    }
-    fseek(fp, 0, SEEK_SET);
-    buf->str = (char *)malloc(len + 1);
-    if (!buf->str) {
-        fclose(fp);
-        buf->size = 0;
-        fprintf(stderr, "malloc(%ld) failed\n", len + 1);
-        return -1;
-    }
-    buf->size = len + 1;
-    realsize = fread(buf->str, 1, len, fp);
-    fclose(fp);
-
-    buf->str[realsize] = '\0';
-    return 0;
-}
-
-TEST(json_save, str)
-{
-    JSON *json;
-    buf_t result;
-    const char *expect = "\"hello world\"\n";
-
-    json = json_new_str("hello world");
-    EXPECT_EQ(0, json_save(json, "test.yml"));
-    EXPECT_EQ(0, read_file(&result, "test.yml"));
-
-    ASSERT_TRUE(strcmp(result.str, expect) == 0);
-    free(result.str);
-    json_free(json);
-}
-
-
-
-TEST(json_save, obj)
-{
-    JSON *json;
-    buf_t result;
-    const char *expect = "key: \"hello\"\nname: \"world\"\n";
-
-    json = json_new(JSON_OBJ);
-    json_add_member(json, "key", json_new_str("hello"));
-    json_add_member(json, "name", json_new_str("world"));
-
-    EXPECT_EQ(0, json_save(json, "test-obj.yml"));
-    EXPECT_EQ(0, read_file(&result, "test-obj.yml"));
-
-    ASSERT_TRUE(strcmp(result.str, expect) == 0);
-    free(result.str);
-    json_free(json);
-}
-
 
 
 int main(int argc, char **argv)

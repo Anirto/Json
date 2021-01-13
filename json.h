@@ -1,6 +1,7 @@
 #ifndef JSON_H_
 #define JSON_H_
 
+
 /**
  * 枚举json类型
 */
@@ -12,9 +13,10 @@ typedef enum json_e
     JSON_STR,           //字符串类型
     JSON_ARR,           //数组类型
     JSON_OBJ,           //对象类型
+    JSON_MAX            //错误类型
 } json_e;
 
-typedef unsigned int BOOL;
+typedef unsigned short BOOL;
 typedef unsigned int U32;
 typedef struct value JSON;
 

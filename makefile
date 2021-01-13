@@ -1,5 +1,5 @@
 def:
-	gcc -Wall -g -fprofile-arcs -ftest-coverage -c -o json.o json.c
+	gcc -Wall -g -fprofile-arcs -ftest-coverage -c -o json.o json.c -D NDEBUG
 	gcc -Wall -g -fprofile-arcs -ftest-coverage -c -o demo.o demo.c
 	gcc -Wall -g -fprofile-arcs -ftest-coverage -c -o test_main.o test_main.c
 	gcc -Wall -g -fprofile-arcs -ftest-coverage -c -o xtest.o xtest.c
